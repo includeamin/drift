@@ -4,6 +4,7 @@ import typing
 import pytest
 
 from diff import Delta, diff, patch
+from diff.patch import JsonPathError, get_by_json_path
 
 
 def _op_has_field(op_obj, name: str) -> bool:
@@ -217,3 +218,56 @@ def test_reverse_diff_converts_back_and_forth():
 
     assert patch(base=old, deltas=forward) == new
     assert patch(base=new, deltas=backward) == old
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ({}, {"empty_dict": {}}),
+        ({}, {"empty_list": []}),
+        ({"empty_dict": {}}, {}),
+        ({"empty_list": []}, {}),
+        ({"value": {"nested": 1}}, {"value": {}}),
+        ({"value": {}}, {"value": {"nested": 1}}),
+    ],
+)
+def test_empty_containers_roundtrip(old, new):
+    assert patch(base=old, deltas=diff(new=new, old=old)) == new
+
+
+def test_multiple_list_deletions_are_descending_and_patchable():
+    old = {"items": ["a", "b", "c", "d"]}
+    new = {"items": ["a", "b"]}
+
+    operations = diff(new=new, old=old)
+
+    assert [operation.path for operation in operations] == ["$.items[3]", "$.items[2]"]
+    assert patch(base=old, deltas=operations) == new
+
+
+def test_keys_requiring_bracket_notation_roundtrip():
+    old = {"a.b": {"items[0]": {'quoted."key': "old"}}}
+    new = {"a.b": {"items[0]": {'quoted."key': "new"}}}
+
+    operations = diff(new=new, old=old)
+
+    assert patch(base=old, deltas=operations) == new
+
+
+@pytest.mark.parametrize("path", ["$[invalid]", '$["unterminated]', "$.items[1"])
+def test_malformed_json_paths_raise_json_path_error(path):
+    with pytest.raises(JsonPathError):
+        get_by_json_path({}, path)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([1, {"value": "old"}], [1, {"value": "new"}, 3]),
+        ("old", "new"),
+        (1, {"value": 1}),
+        ({"value": 1}, []),
+    ],
+)
+def test_root_json_values_roundtrip(old, new):
+    assert patch(base=old, deltas=diff(new=new, old=old)) == new

@@ -1,118 +1,8 @@
 import copy
-import typing
 from typing import Any
 
-from diff.diff import Delta
-
-Token = str | int  # str for dict keys, int for list indices
-
-
-class JsonPathError(ValueError):
-    pass
-
-
-def _tokenize_json_path(path: str) -> list[Token]:
-    """
-    Tokenize a JSONPath-like string into a list of tokens.
-    - Dict keys -> strings
-    - List indices -> integers
-    Supported syntax:
-    $.a.b[2]["key.with.dots"][0]
-    Notes:
-    - Leading '$' is optional.
-    - Dot-notation for simple keys.
-    - Brackets for indices and quoted keys. Quotes can be ' or ".
-    - Escaping inside quoted keys: backslash escapes the quote and backslash (\", \', \\).
-    """
-    if not isinstance(path, str) or not path:
-        raise JsonPathError("Path must be a non-empty string.")
-
-    i = 0
-    n = len(path)
-    tokens: list[Token] = []
-
-    # Skip optional leading '$' and optional following '.'
-    if i < n and path[i] == "$":
-        i += 1
-        if i < n and path[i] == ".":
-            i += 1
-
-    def read_simple_key(start: int) -> tuple[str, int]:
-        j = start
-        while j < n and path[j] not in ".[":
-            j += 1
-        if j == start:
-            raise JsonPathError(f"Expected key at position {start} in '{path}'")
-        return path[start:j], j
-
-    def read_bracket_key_or_index(start: int) -> tuple[Token, int]:
-        # start at '[', return (token, new_index_after_'])
-        j = start + 1
-        if j >= n:
-            raise JsonPathError(f"Unclosed '[' at position {start} in '{path}'")
-
-        if path[j] in ("'", '"'):
-            # Quoted key
-            quote = path[j]
-            j += 1
-            buf = []
-            while j < n:
-                ch = path[j]
-                if ch == "\\":  # escape sequence
-                    j += 1
-                    if j >= n:
-                        raise JsonPathError("Trailing backslash in quoted key.")
-                    esc = path[j]
-                    if esc in [quote, "\\"]:
-                        buf.append(esc)
-                    else:
-                        # Keep unknown escape as-is (e.g., \n), or handle specially if desired
-                        buf.append(esc)
-                    j += 1
-                    continue
-                if ch == quote:
-                    j += 1
-                    break
-                buf.append(ch)
-                j += 1
-            else:
-                raise JsonPathError(
-                    f"Unclosed quoted key starting at position {start} in '{path}'"
-                )
-
-            # Expect closing ']'
-            if j >= n or path[j] != "]":
-                raise JsonPathError(
-                    f"Expected ']' after quoted key at position {j} in '{path}'"
-                )
-            return "".join(buf), j + 1
-
-        # Numeric index
-        k = j
-        while k < n and path[k].isdigit():
-            k += 1
-        if k == j:
-            raise JsonPathError(
-                f"Expected non-negative integer index after '[' at position {start} in '{path}'"
-            )
-        if k >= n or path[k] != "]":
-            raise JsonPathError(f"Expected ']' after index at position {k} in '{path}'")
-        idx = int(path[j:k])
-        return idx, k + 1
-
-    while i < n:
-        ch = path[i]
-        if ch == ".":
-            i += 1  # skip redundant dots (e.g., '$.a..b' would error on next step)
-            continue
-        elif ch == "[":
-            token, i = read_bracket_key_or_index(i)
-            tokens.append(token)
-        else:
-            key, i = read_simple_key(i)
-            tokens.append(key)
-
-    return tokens
+from diff.delta import Delta, JsonValue
+from diff.json_path import JsonPathError, Token, tokenize_json_path
 
 
 def set_by_json_path(
@@ -129,7 +19,7 @@ def set_by_json_path(
     - TypeError when the path expects a dict/list but finds another type.
     - IndexError for negative indices (not supported).
     """
-    tokens = _tokenize_json_path(path)
+    tokens = tokenize_json_path(path)
     if not tokens:
         raise JsonPathError("Path resolves to the root; set on '$' is not supported.")
 
@@ -199,7 +89,7 @@ def get_by_json_path(doc: Any, path: str) -> Any:
     """
     Retrieve a value from `doc` following the same JSONPath-like syntax.
     """
-    tokens = _tokenize_json_path(path)
+    tokens = tokenize_json_path(path)
     current = doc
     for idx, tok in enumerate(tokens):
         if isinstance(tok, str):
@@ -262,7 +152,7 @@ def pop_by_json_path(
     Remove and return the value at `path`. Behaves like delete_by_json_path but returns the removed value.
     If the path is missing and missing_ok=True, returns None and leaves `doc` unchanged.
     """
-    tokens = _tokenize_json_path(path)
+    tokens = tokenize_json_path(path)
     if not tokens:
         raise JsonPathError("Path resolves to the root; popping '$' is not supported.")
 
@@ -353,9 +243,14 @@ def pop_by_json_path(
     return removed
 
 
-def patch(base: dict[str, typing.Any], deltas: list[Delta]) -> dict[str, typing.Any]:
+def patch(base: JsonValue, deltas: list[Delta]) -> JsonValue:
     output = copy.deepcopy(base)
     for op in deltas:
+        if op.path == "$":
+            if op.operation == "deleted":
+                raise JsonPathError("Deleting the root value is not supported.")
+            output = copy.deepcopy(op.new_value)
+            continue
         if op.operation == "deleted":
             pop_by_json_path(output, op.path, prune_empty=True, remove_from_list=True)
             continue

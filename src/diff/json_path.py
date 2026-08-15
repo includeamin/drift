@@ -4,6 +4,90 @@ from typing import Any
 Token = str | int
 
 
+class JsonPathError(ValueError):
+    pass
+
+
+def tokenize_json_path(path: str) -> list[Token]:
+    """Tokenize a JSONPath-like path into dictionary keys and list indices."""
+    if not isinstance(path, str) or not path:
+        raise JsonPathError("Path must be a non-empty string.")
+
+    i = 0
+    n = len(path)
+    tokens: list[Token] = []
+
+    if path.startswith("$"):
+        i += 1
+        if i < n and path[i] == ".":
+            i += 1
+
+    def read_simple_key(start: int) -> tuple[str, int]:
+        j = start
+        while j < n and path[j] not in ".[":
+            j += 1
+        if j == start:
+            raise JsonPathError(f"Expected key at position {start} in '{path}'")
+        return path[start:j], j
+
+    def read_bracket_key_or_index(start: int) -> tuple[Token, int]:
+        j = start + 1
+        if j >= n:
+            raise JsonPathError(f"Unclosed '[' at position {start} in '{path}'")
+
+        if path[j] in ("'", '"'):
+            quote = path[j]
+            j += 1
+            buffer: list[str] = []
+            while j < n:
+                char = path[j]
+                if char == "\\":
+                    j += 1
+                    if j >= n:
+                        raise JsonPathError("Trailing backslash in quoted key.")
+                    buffer.append(path[j])
+                    j += 1
+                    continue
+                if char == quote:
+                    j += 1
+                    break
+                buffer.append(char)
+                j += 1
+            else:
+                raise JsonPathError(
+                    f"Unclosed quoted key starting at position {start} in '{path}'"
+                )
+
+            if j >= n or path[j] != "]":
+                raise JsonPathError(
+                    f"Expected ']' after quoted key at position {j} in '{path}'"
+                )
+            return "".join(buffer), j + 1
+
+        k = j
+        while k < n and path[k].isdigit():
+            k += 1
+        if k == j:
+            raise JsonPathError(
+                f"Expected non-negative integer index after '[' at position {start} in '{path}'"
+            )
+        if k >= n or path[k] != "]":
+            raise JsonPathError(f"Expected ']' after index at position {k} in '{path}'")
+        return int(path[j:k]), k + 1
+
+    while i < n:
+        if path[i] == ".":
+            i += 1
+        elif path[i] == "[":
+            token, i = read_bracket_key_or_index(i)
+            tokens.append(token)
+        else:
+            token, i = read_simple_key(i)
+            tokens.append(token)
+
+    return tokens
+
+
 def _escape_key_for_brackets(key: str) -> str:
     """Escape a key for bracket notation with double quotes."""
     return key.replace("\\", "\\\\").replace('"', '\\"')

@@ -4,7 +4,7 @@ Diff is a library to calculate deltas between structured data.
 
 ## Features
 
-- Calculate detla(s)
+- Calculate delta(s)
 - Rebuild state from delta(s)
 
 ## Supported Formats
@@ -47,7 +47,7 @@ deltas = diff.diff(new=new, old=old)
 
 rebuild_new = diff.patch(base=old, deltas=deltas)
 
-assert rebuild_new == old
+assert rebuild_new == new
 ```
 
 ## Install
