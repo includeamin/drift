@@ -4,13 +4,15 @@ import typing
 
 @dataclasses.dataclass
 class Delta:
-    operation: typing.Literal["deleted", "modified", "added"]
+    op: typing.Literal["add", "remove", "replace", "move", "copy", "test"]
     path: str
-    new_value: typing.Any | None
-    old_value: typing.Any | None
+    value: typing.Any = None
+    from_path: str | None = None
 
     def __repr__(self):
-        return (
-            f"Delta(operation='{self.operation}', path='{self.path}', "
-            f"new_value={self.new_value!r}, old_value={self.old_value!r})"
-        )
+        fields = [f'"op": {self.op!r}', f'"path": {self.path!r}']
+        if self.op in {"add", "replace", "test"}:
+            fields.append(f'"value": {self.value!r}')
+        if self.op in {"move", "copy"}:
+            fields.append(f'"from": {self.from_path!r}')
+        return "{" + ", ".join(fields) + "}"
