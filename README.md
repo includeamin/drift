@@ -71,6 +71,18 @@ $ jdiff diff old.json new.json --stats --compact
 {"total": 3, "by_op": {"add": 1, "replace": 2}}
 ```
 
+Add `--pretty` for a colored, human-readable rendering instead of JSON Patch:
+
+```bash
+$ jdiff diff old.json new.json --pretty
++ /tags/2: "c"
+~ /meta/v: 1 → 2
+```
+
+Colors are used automatically on a TTY and disabled when piping; pass
+`--no-color`, or set the `NO_COLOR`/`FORCE_COLOR` environment variables, to
+override the detection.
+
 ### `jdiff patch DOCUMENT PATCH`
 
 Apply a JSON Patch array to a document. `--in-place` rewrites the file.

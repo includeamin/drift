@@ -9,6 +9,7 @@ from diff.delta import Delta
 from diff.diff import diff
 from diff.json_path import list_json_paths, paths_with_values
 from diff.patch import patch
+from diff.render import render_pretty, supports_color
 
 PROGRAM = "jdiff"
 
@@ -38,6 +39,14 @@ def _write_json(value: Any, destination: str | None, indent: int | None) -> None
         handle.write(text + "\n")
 
 
+def _write_text(text: str, destination: str | None) -> None:
+    if destination is None or destination == "-":
+        sys.stdout.write(text + "\n")
+        return
+    with open(destination, "w", encoding="utf-8") as handle:
+        handle.write(text + "\n")
+
+
 def _indent(args: argparse.Namespace) -> int | None:
     return None if args.compact else args.indent
 
@@ -47,7 +56,10 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     new = _read_json(args.new)
     operations = diff(new, old)
 
-    if args.stats:
+    if args.pretty:
+        color = supports_color() if not args.no_color else False
+        _write_text(render_pretty(operations, old, color=color), args.output)
+    elif args.stats:
         counts: dict[str, int] = {}
         for operation in operations:
             counts[operation.op] = counts.get(operation.op, 0) + 1
@@ -140,6 +152,16 @@ def build_parser() -> argparse.ArgumentParser:
     diff_parser.add_argument("new", help="Path to the updated document, or '-'")
     diff_parser.add_argument(
         "--stats", action="store_true", help="Print an operation-count summary instead"
+    )
+    diff_parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Render a human-readable colored diff instead of JSON Patch",
+    )
+    diff_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors in --pretty output (also honors NO_COLOR env var)",
     )
     diff_parser.add_argument(
         "--exit-code", action="store_true", help="Exit 1 when the documents differ"
