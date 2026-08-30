@@ -93,13 +93,29 @@ jobs:
           test "$expected" = "$pyproject"
           test "$expected" = "$package"
 
+      # orhun/git-cliff-action is a Docker action whose image is based on Debian
+      # buster. Buster is EOL and no longer served by deb.debian.org, so the
+      # image build fails on `apt-get update`. Use the release binary instead.
+      - name: Install git-cliff
+        env:
+          GIT_CLIFF_VERSION: "2.4.0"
+        run: |
+          set -euo pipefail
+          url="https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL --retry 3 "$url" -o /tmp/git-cliff.tar.gz
+          tar -xzf /tmp/git-cliff.tar.gz -C /tmp
+          sudo install "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" /usr/local/bin/git-cliff
+          git-cliff --version
+
       - name: Generate the changelog
-        uses: orhun/git-cliff-action@v3
-        with:
-          args: --tag ${{ steps.version.outputs.tag }} --output CHANGELOG.md
-          config: cliff.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          git-cliff --tag "${{ steps.version.outputs.tag }}" --output CHANGELOG.md
+          # Release notes cover only this release, unlike the cumulative file.
+          git-cliff --tag "${{ steps.version.outputs.tag }}" --unreleased --strip all \
+            --output RELEASE_NOTES.md
 
       - name: Build the jdiff zipapp
         run: |
@@ -136,6 +152,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
-          body_path: CHANGELOG.md
+          body_path: RELEASE_NOTES.md
           files: artifacts/*
           token: ${{ secrets.GH_TOKEN }}
