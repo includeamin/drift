@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Generated during releases by git-cliff
+RELEASE_NOTES.md
+
 # C extensions
 *.so
 
