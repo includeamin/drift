@@ -65,7 +65,9 @@ def render_pretty(operations: list[Delta], old: Any, *, color: bool = True) -> s
         elif operation.op == "replace":
             old_value = _resolve(old, operation.path)
             new_value = _format_value(operation.value)
-            lines.append(f"{prefix} {operation.path}: {_format_value(old_value)} \u2192 {new_value}")
+            lines.append(
+                f"{prefix} {operation.path}: {_format_value(old_value)} \u2192 {new_value}"
+            )
         elif operation.op in {"move", "copy"}:
             lines.append(f"{prefix} {operation.path} \u2190 {operation.from_path}")
         else:  # test
