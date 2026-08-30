@@ -9,6 +9,9 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">= 3.11"
 
+[project.scripts]
+jdiff = "diff.cli:run"
+
 [tool.poetry]
 
 [tool.poetry.group.dev.dependencies]

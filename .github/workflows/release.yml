@@ -4,58 +4,138 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump to apply"
+        required: true
+        default: minor
+        type: choice
+        options: [major, minor, patch]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  release-on-push:
+  release:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
 
     steps:
       - uses: actions/checkout@v4
-      - id: release
-        uses: rymndhng/release-on-push-action@master
         with:
-          bump_version_scheme: minor
-          tag_prefix: v
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
-      # Step 2: Generate Changelog using git-cliff-action
-      - name: Generate Changelog with GitCliff
-        uses: orhun/git-cliff-action@v1
+      - uses: actions/setup-python@v5
         with:
-          args: "-o CHANGELOG.md"
-          config: 'cliff.toml'
+          python-version: "3.12"
+
+      - uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: latest
+
+      # Single source of truth: the next tag drives both pyproject.toml and
+      # src/diff/__init__.py, so the three can never drift apart.
+      - name: Resolve next version
+        id: version
+        run: |
+          set -euo pipefail
+          latest="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+          latest="${latest:-v0.0.0}"
+          IFS='.' read -r major minor patch <<< "${latest#v}"
+
+          bump="${{ github.event.inputs.bump || 'minor' }}"
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          version="${major}.${minor}.${patch}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version (previous: $latest)"
+
+      - name: Apply the version to pyproject.toml and the package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          poetry version "$version"
+          python - "$version" <<'PY'
+          import pathlib, re, sys
+
+          version = sys.argv[1]
+          path = pathlib.Path("src/diff/__init__.py")
+          updated, count = re.subn(
+              r'^__version__\s*=\s*"[^"]*"',
+              f'__version__ = "{version}"',
+              path.read_text(encoding="utf-8"),
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if count != 1:
+              raise SystemExit("Could not find __version__ in src/diff/__init__.py")
+          path.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Verify the versions agree
+        run: |
+          set -euo pipefail
+          expected="${{ steps.version.outputs.version }}"
+          pyproject="$(poetry version --short)"
+          package="$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/diff/__init__.py').read_text()).group(1))")"
+          echo "tag=$expected pyproject=$pyproject package=$package"
+          test "$expected" = "$pyproject"
+          test "$expected" = "$package"
+
+      - name: Generate the changelog
+        uses: orhun/git-cliff-action@v3
+        with:
+          args: --tag ${{ steps.version.outputs.tag }} --output CHANGELOG.md
+          config: cliff.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      # Step 4: Check Output Parameters (optional, for debugging)
-      - name: Check Output Parameters
+      - name: Build the jdiff zipapp
         run: |
-          echo "Got tag name ${{ steps.release.outputs.tag_name }}"
-          echo "Got release version ${{ steps.release.outputs.version }}"
-          echo "Upload release artifacts to ${{ steps.release.outputs.upload_url }}"
+          set -euo pipefail
+          mkdir -p artifacts staging
+          cp -R src/diff staging/diff
+          find staging -type d -name '__pycache__' -prune -exec rm -rf {} + || true
+          python -m zipapp staging \
+            --main "diff.cli:run" \
+            --python "/usr/bin/env python3" \
+            --compress \
+            --output artifacts/jdiff
+          chmod +x artifacts/jdiff
+          test "$(artifacts/jdiff --version)" = "jdiff ${{ steps.version.outputs.version }}"
 
-      # Step 5: Set release body with changelog
-      - name: Set release body with changelog
-        id: release_body
+      - name: Build the Python distributions
         run: |
-            ls -l  # List files to check if CHANGELOG.md exists
-            if [ -f CHANGELOG.md ]; then
-                echo "CHANGELOG.md exists"
-                echo "body<<EOF" >> $GITHUB_ENV
-                cat CHANGELOG.md >> $GITHUB_ENV
-                echo "EOF" >> $GITHUB_ENV
-            else
-                echo "CHANGELOG.md does not exist"
-                echo "body=No changelog available" >> $GITHUB_ENV
-            fi
+          poetry build
+          cp dist/* artifacts/
 
-      # Step 6: Create GitHub Release with Changelog in Release Notes
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Commit and tag the release
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/diff/__init__.py CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.version.outputs.tag }} [skip ci]"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release.outputs.tag_name }}
-          files: ./artifacts/*
-          body: ${{ steps.release_body.outputs.body }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body_path: CHANGELOG.md
+          files: artifacts/*
+          token: ${{ secrets.GH_TOKEN }}
