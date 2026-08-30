@@ -7,11 +7,12 @@ from typing import Any
 from diff import __version__
 from diff.delta import Delta
 from diff.diff import diff
+from diff.formats import Format, available_names, resolve
 from diff.json_path import list_json_paths, paths_with_values
 from diff.patch import patch
 from diff.render import render_pretty, supports_color
 
-PROGRAM = "jdiff"
+PROGRAM = "drift"
 
 
 def _delta_to_dict(delta: Delta) -> dict[str, Any]:
@@ -28,6 +29,22 @@ def _read_json(source: str) -> Any:
         return json.load(sys.stdin)
     with open(source, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _read_document(source: str, fmt: Format) -> Any:
+    if source == "-":
+        return fmt.load(sys.stdin.read())
+    with open(source, encoding="utf-8") as handle:
+        return fmt.load(handle.read())
+
+
+def _write_document(value: Any, destination: str | None, fmt: Format) -> None:
+    text = fmt.dump(value)
+    if destination is None or destination == "-":
+        sys.stdout.write(text)
+        return
+    with open(destination, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def _write_json(value: Any, destination: str | None, indent: int | None) -> None:
@@ -52,13 +69,17 @@ def _indent(args: argparse.Namespace) -> int | None:
 
 
 def _cmd_diff(args: argparse.Namespace) -> int:
-    old = _read_json(args.old)
-    new = _read_json(args.new)
+    old_format = resolve(args.format, args.old)
+    new_format = resolve(args.format, args.new)
+    old = _read_document(args.old, old_format)
+    new = _read_document(args.new, new_format)
     operations = diff(new, old)
 
     if args.pretty:
         color = supports_color() if not args.no_color else False
-        _write_text(render_pretty(operations, old, color=color), args.output)
+        _write_text(
+            render_pretty(operations, old, color=color, format=old_format), args.output
+        )
     elif args.stats:
         counts: dict[str, int] = {}
         for operation in operations:
@@ -75,7 +96,8 @@ def _cmd_diff(args: argparse.Namespace) -> int:
 
 
 def _cmd_patch(args: argparse.Namespace) -> int:
-    document = _read_json(args.document)
+    document_format = resolve(args.format, args.document)
+    document = _read_document(args.document, document_format)
     operations = _read_json(args.patch)
     if not isinstance(operations, list):
         raise ValueError("A JSON Patch document must be an array of operations")
@@ -84,12 +106,12 @@ def _cmd_patch(args: argparse.Namespace) -> int:
     destination = args.document if args.in_place else args.output
     if args.in_place and args.document == "-":
         raise ValueError("--in-place cannot be used when reading from stdin")
-    _write_json(result, destination, _indent(args))
+    _write_document(result, destination, document_format)
     return 0
 
 
 def _cmd_paths(args: argparse.Namespace) -> int:
-    document = _read_json(args.document)
+    document = _read_document(args.document, resolve(args.format, args.document))
     options: dict[str, Any] = {
         "include_root": args.include_root,
         "include_containers": args.containers,
@@ -112,8 +134,8 @@ def _cmd_paths(args: argparse.Namespace) -> int:
 
 
 def _cmd_apply(args: argparse.Namespace) -> int:
-    old = _read_json(args.old)
-    new = _read_json(args.new)
+    old = _read_document(args.old, resolve(args.format, args.old))
+    new = _read_document(args.new, resolve(args.format, args.new))
     operations = diff(new, old)
     rebuilt = patch(old, operations)
     ok = rebuilt == new
@@ -132,6 +154,15 @@ def _add_output_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--compact", action="store_true", help="Emit single-line JSON output"
+    )
+
+
+def _add_format_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--format",
+        choices=available_names(),
+        default=None,
+        help="Document format (default: detected from file extension, falls back to json)",
     )
 
 
@@ -166,6 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     diff_parser.add_argument(
         "--exit-code", action="store_true", help="Exit 1 when the documents differ"
     )
+    _add_format_flag(diff_parser)
     _add_output_flags(diff_parser)
     diff_parser.set_defaults(handler=_cmd_diff)
 
@@ -177,6 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     patch_parser.add_argument(
         "--in-place", action="store_true", help="Rewrite the document file in place"
     )
+    _add_format_flag(patch_parser)
     _add_output_flags(patch_parser)
     patch_parser.set_defaults(handler=_cmd_patch)
 
@@ -202,6 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     paths_parser.add_argument(
         "--json", action="store_true", help="Emit a JSON array instead of plain lines"
     )
+    _add_format_flag(paths_parser)
     _add_output_flags(paths_parser)
     paths_parser.set_defaults(handler=_cmd_paths)
 
@@ -210,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument("old", help="Path to the original document, or '-'")
     check_parser.add_argument("new", help="Path to the updated document, or '-'")
+    _add_format_flag(check_parser)
     _add_output_flags(check_parser)
     check_parser.set_defaults(handler=_cmd_apply)
 

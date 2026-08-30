@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Installer and updater for the `jdiff` command.
+# Installer and updater for the `drift` command.
 #
-# The project has no runtime dependencies, so jdiff ships as a zipapp (PEP 441):
+# The project has no runtime dependencies, so drift ships as a zipapp (PEP 441):
 # a single self-contained executable that starts as fast as a plain script.
 #
 # Remote install (no clone required):
-#   curl -fsSL https://raw.githubusercontent.com/includeamin/diff/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/includeamin/drift/main/install.sh | bash
 #
 # Usage:
 #   bash install.sh                  Install or reinstall the latest release
@@ -14,7 +14,7 @@
 #   bash install.sh --update         Install only if a newer release exists
 #   bash install.sh --ref v0.5.0     Install a specific tag, branch or commit
 #   bash install.sh --local          Build from the working tree instead of GitHub
-#   bash install.sh --uninstall      Remove jdiff and its cached checkout
+#   bash install.sh --uninstall      Remove drift and its cached checkout
 #
 # Environment:
 #   PREFIX    Install prefix (default: ~/.local)
@@ -23,8 +23,8 @@
 #
 set -euo pipefail
 
-readonly PROGRAM="jdiff"
-readonly REPO_SLUG="includeamin/diff"
+readonly PROGRAM="drift"
+readonly REPO_SLUG="includeamin/drift"
 readonly MIN_MAJOR=3
 readonly MIN_MINOR=11
 
@@ -183,6 +183,27 @@ fetch_source() {
     RESOLVED_REF="$ref"
 }
 
+DEPS=(pyyaml tomli-w)
+
+# Installs DEPS into $2 using $1's pip, bootstrapping a throwaway venv when
+# the interpreter has no pip of its own (e.g. externally-managed distros).
+vendor_deps() {
+    local python="$1" target="$2" bootstrap
+    if "$python" -m pip --version >/dev/null 2>&1; then
+        "$python" -m pip install --quiet --no-deps --target "$target" "${DEPS[@]}" ||
+            die "Failed to vendor runtime dependencies (${DEPS[*]}) into the build."
+        return
+    fi
+
+    bootstrap="$(mktemp -d)"
+    "$python" -m venv "$bootstrap" >/dev/null 2>&1 ||
+        { rm -rf "$bootstrap"; die "Neither pip nor venv is available for $python; install pip and retry."; }
+    local status=0
+    "$bootstrap/bin/pip" install --quiet --no-deps --target "$target" "${DEPS[@]}" || status=$?
+    rm -rf "$bootstrap"
+    [[ $status -eq 0 ]] || die "Failed to vendor runtime dependencies (${DEPS[*]}) into the build."
+}
+
 build_and_install() {
     local python package_version staging recorded
     python="$(find_python)" ||
@@ -197,6 +218,10 @@ build_and_install() {
 
     cp -R "$SOURCE_ROOT/src/diff" "$staging/diff"
     find "$staging" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+
+    vendor_deps "$python" "$staging"
+    find "$staging" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+    rm -rf "$staging"/*.dist-info
 
     info "Building zipapp..."
     "$python" -m zipapp "$staging" \

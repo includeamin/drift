@@ -133,19 +133,21 @@ jobs:
           git-cliff --tag "${{ steps.version.outputs.tag }}" --unreleased --strip all \
             --output RELEASE_NOTES.md
 
-      - name: Build the jdiff zipapp
+      - name: Build the drift zipapp
         run: |
           set -euo pipefail
           mkdir -p artifacts staging
           cp -R src/diff staging/diff
+          pip install --quiet --no-deps --target staging pyyaml tomli-w
           find staging -type d -name '__pycache__' -prune -exec rm -rf {} + || true
+          rm -rf staging/*.dist-info
           python -m zipapp staging \
             --main "diff.cli:run" \
             --python "/usr/bin/env python3" \
             --compress \
-            --output artifacts/jdiff
-          chmod +x artifacts/jdiff
-          test "$(artifacts/jdiff --version)" = "jdiff ${{ steps.version.outputs.version }}"
+            --output artifacts/drift
+          chmod +x artifacts/drift
+          test "$(artifacts/drift --version)" = "drift ${{ steps.version.outputs.version }}"
 
       - name: Build the Python distributions
         run: |
