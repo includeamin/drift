@@ -2,4 +2,7 @@ from diff.delta import Delta
 from diff.diff import diff
 from diff.patch import patch
 
-__all__ = ["Delta", "diff", "patch"]
+# Kept in sync with pyproject.toml by .github/workflows/release.yml.
+__version__ = "0.4.0"
+
+__all__ = ["Delta", "__version__", "diff", "patch"]

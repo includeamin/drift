@@ -30,3 +30,21 @@ jobs:
         run: make lint
       - name: test
         run: make test
+
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: latest
+      - name: pyproject.toml and __init__.py must declare the same version
+        run: |
+          set -euo pipefail
+          pyproject="$(poetry version --short)"
+          package="$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/diff/__init__.py').read_text()).group(1))")"
+          echo "pyproject=$pyproject package=$package"
+          test "$pyproject" = "$package"
