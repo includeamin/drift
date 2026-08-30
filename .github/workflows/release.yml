@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       bump:
@@ -12,9 +15,14 @@ on:
         default: minor
         type: choice
         options: [major, minor, patch]
+      dry_run:
+        description: "Rehearse the release without pushing or publishing"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -25,11 +33,19 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'chore(release):')"
 
+    # Pull requests always rehearse: every step runs except the ones that
+    # push commits, push tags or publish a release.
+    env:
+      DRY_RUN: ${{ github.event_name == 'pull_request' || inputs.dry_run == true }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN }}
+          # The built-in token is used deliberately: the job-level `contents:
+          # write` permission covers pushing the bump commit, the tag and the
+          # release, and it cannot expire the way a PAT can.
+          token: ${{ github.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -109,7 +125,7 @@ jobs:
 
       - name: Generate the changelog
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git-cliff --tag "${{ steps.version.outputs.tag }}" --output CHANGELOG.md
@@ -144,14 +160,56 @@ jobs:
           git add pyproject.toml src/diff/__init__.py CHANGELOG.md
           git commit -m "chore(release): ${{ steps.version.outputs.tag }} [skip ci]"
           git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Dry run: the commit and tag were created locally but not pushed."
+            git --no-pager show --stat --oneline HEAD
+            exit 0
+          fi
+
           git push origin HEAD:main
           git push origin "${{ steps.version.outputs.tag }}"
 
+      - name: Upload the artifacts for inspection
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run-${{ steps.version.outputs.tag }}
+          path: |
+            artifacts/*
+            CHANGELOG.md
+            RELEASE_NOTES.md
+          if-no-files-found: error
+
+      - name: Summarise the dry run
+        if: env.DRY_RUN == 'true'
+        run: |
+          set -euo pipefail
+          {
+            echo "## Release dry run"
+            echo
+            echo "Nothing was pushed or published. This release **would** have produced:"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Tag | \`${{ steps.version.outputs.tag }}\` |"
+            echo "| pyproject.toml | \`$(poetry version --short)\` |"
+            echo "| \`diff.__version__\` | \`$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/diff/__init__.py').read_text()).group(1))")\` |"
+            echo
+            echo "### Artifacts"
+            echo '```'
+            ls -lh artifacts/
+            echo '```'
+            echo "### Release notes preview"
+            cat RELEASE_NOTES.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create the GitHub release
+        if: env.DRY_RUN != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           body_path: RELEASE_NOTES.md
           files: artifacts/*
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ github.token }}
