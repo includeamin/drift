@@ -29,7 +29,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN }}
+          # Falls back to the built-in token, which the job-level `contents:
+          # write` permission already covers, if the PAT is absent or expired.
+          token: ${{ secrets.GH_TOKEN || github.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -109,7 +111,7 @@ jobs:
 
       - name: Generate the changelog
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           git-cliff --tag "${{ steps.version.outputs.tag }}" --output CHANGELOG.md
@@ -154,4 +156,4 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           body_path: RELEASE_NOTES.md
           files: artifacts/*
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GH_TOKEN || github.token }}
