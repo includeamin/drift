@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## [0.13.0] - 2026-08-31
+
+### Bug Fixes
+
+- Update readme and cli help text to clarify the usage
+
 ## [0.12.0] - 2026-08-31
 
 ### Bug Fixes
