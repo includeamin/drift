@@ -32,6 +32,7 @@ def test_filter_operations_combines_criteria():
     assert filter_operations(
         operations, old={"settings": {"debug": "enabled"}}, values=["enabled"]
     ) == [operations[3]]
+    assert filter_operations(operations, values=["/users/1/name"]) == [operations[2]]
     assert filter_operations(operations, paths=["/users/**"], invert=True) == [
         operations[3]
     ]

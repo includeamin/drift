@@ -101,9 +101,9 @@ drift diff old.json new.json --grep '@example\.com' --op add --op replace
 drift diff old.json new.json --path '/settings/**' --invert-match
 ```
 
-`--field` matches the final path segment. `--grep` searches operation values,
-including both old and new values for replacements and the removed value for
-removals.
+`--field` matches the final path segment. `--grep` searches JSON Pointer paths
+and operation values, including both old and new values for replacements and
+the removed value for removals.
 
 ### `drift patch DOCUMENT PATCH`
 

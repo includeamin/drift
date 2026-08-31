@@ -30,7 +30,7 @@ def path_matches(pattern: str, path: str) -> bool:
     return match(0, 0)
 
 
-def _value_matches(patterns: Sequence[re.Pattern[str]], values: Sequence[Any]) -> bool:
+def _grep_matches(patterns: Sequence[re.Pattern[str]], values: Sequence[Any]) -> bool:
     return any(
         pattern.search(json.dumps(value, ensure_ascii=False)) is not None
         for pattern in patterns
@@ -86,10 +86,16 @@ def filter_operations(
             field = split_pointer(operation.path)[-1] if operation.path else ""
             if not any(pattern.search(field) for pattern in field_patterns):
                 return False
-        operation_values: Sequence[Any] = (operation.value,)
+        operation_values: Sequence[Any] = (operation.path, operation.value)
         if operation.op in {"remove", "replace"}:
-            operation_values = (_resolve(old, operation.path), operation.value)
-        if values and not _value_matches(value_patterns, operation_values):
+            operation_values = (
+                operation.path,
+                _resolve(old, operation.path),
+                operation.value,
+            )
+        elif operation.from_path is not None:
+            operation_values = (operation.path, operation.from_path, operation.value)
+        if values and not _grep_matches(value_patterns, operation_values):
             return False
         return not operation_types or operation.op in operation_types
 

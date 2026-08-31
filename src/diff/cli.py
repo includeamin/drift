@@ -196,7 +196,7 @@ def _add_filter_flags(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         metavar="REGEX",
-        help="Filter by regular expression on the operation value",
+        help="Filter by regular expression on operation paths or values",
     )
     parser.add_argument(
         "--op",
