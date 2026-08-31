@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## [0.12.0] - 2026-08-31
+
+### Bug Fixes
+
+- Fix bug in grep
+
 ## [0.11.0] - 2026-08-31
 
 ### Miscellaneous
