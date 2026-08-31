@@ -86,6 +86,25 @@ Colors are used automatically on a TTY and disabled when piping; pass
 `--no-color`, or set the `NO_COLOR`/`FORCE_COLOR` environment variables, to
 override the detection.
 
+Filter the emitted operations with one or more of these flags. Repeated flags
+of the same kind match any value; different kinds must all match. Pass
+`--invert-match` to exclude matching operations.
+
+```bash
+# * matches one path segment; ** matches zero or more segments.
+drift diff old.json new.json --path '/users/*/email'
+drift diff old.json new.json --path '/users/**/id' --pretty
+
+# --field and --grep accept regular expressions.
+drift diff old.json new.json --field 'email|phone'
+drift diff old.json new.json --grep '@example\.com' --op add --op replace
+drift diff old.json new.json --path '/settings/**' --invert-match
+```
+
+`--field` matches the final path segment. `--grep` searches operation values,
+including both old and new values for replacements and the removed value for
+removals.
+
 ### `drift patch DOCUMENT PATCH`
 
 Apply a JSON Patch array to a document. `--in-place` rewrites the file.

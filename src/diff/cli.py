@@ -11,6 +11,7 @@ from diff.formats import Format, available_names, resolve
 from diff.json_path import list_json_paths, paths_with_values
 from diff.patch import patch
 from diff.render import render_pretty, supports_color
+from diff.search import filter_operations
 
 PROGRAM = "drift"
 
@@ -74,6 +75,15 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     old = _read_document(args.old, old_format)
     new = _read_document(args.new, new_format)
     operations = diff(new, old)
+    operations = filter_operations(
+        operations,
+        old=old,
+        paths=args.path,
+        fields=args.field,
+        values=args.grep,
+        operations_by_type=args.op,
+        invert=args.invert_match,
+    )
 
     if args.pretty:
         color = supports_color() if not args.no_color else False
@@ -166,10 +176,49 @@ def _add_format_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_filter_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="Filter by JSON Pointer glob (* one segment, ** any depth)",
+    )
+    parser.add_argument(
+        "--field",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help="Filter by regular expression on the final path segment",
+    )
+    parser.add_argument(
+        "--grep",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help="Filter by regular expression on the operation value",
+    )
+    parser.add_argument(
+        "--op",
+        action="append",
+        choices=("add", "remove", "replace", "move", "copy", "test"),
+        default=[],
+        help="Filter by operation type; repeat to select multiple types",
+    )
+    parser.add_argument(
+        "--invert-match",
+        action="store_true",
+        help="Exclude operations that match the supplied filters",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROGRAM,
-        description="RFC 6902 JSON Patch tooling: diff, patch and inspect JSON documents.",
+        description=(
+            "RFC 6902 JSON Patch tooling: diff, patch and inspect structured "
+            "documents (JSON, YAML, TOML, XML)."
+        ),
     )
     parser.add_argument(
         "-V", "--version", action="version", version=f"{PROGRAM} {__version__}"
@@ -198,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--exit-code", action="store_true", help="Exit 1 when the documents differ"
     )
     _add_format_flag(diff_parser)
+    _add_filter_flags(diff_parser)
     _add_output_flags(diff_parser)
     diff_parser.set_defaults(handler=_cmd_diff)
 

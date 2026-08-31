@@ -1,6 +1,40 @@
 import pytest
 
 from diff import Delta, diff, patch
+from diff.search import filter_operations, path_matches
+
+
+def test_path_matches_segment_aware_globs():
+    assert path_matches("/users/*/email", "/users/0/email")
+    assert not path_matches("/users/*/email", "/users/0/contact/email")
+    assert path_matches("/users/**/email", "/users/0/contact/email")
+    assert path_matches("/users/**", "/users")
+    assert path_matches("/a~1b/*", "/a~1b/c~0d")
+
+
+def test_filter_operations_combines_criteria():
+    operations = [
+        Delta(op="add", path="/users/0/email", value="a@example.com"),
+        Delta(op="replace", path="/users/1/email", value="b@example.com"),
+        Delta(op="replace", path="/users/1/name", value="Bee"),
+        Delta(op="remove", path="/settings/debug"),
+    ]
+
+    assert filter_operations(operations, paths=["/users/*/email"]) == operations[:2]
+    assert filter_operations(operations, fields=["email|debug"]) == [
+        operations[0],
+        operations[1],
+        operations[3],
+    ]
+    assert filter_operations(
+        operations, values=["example\\.com"], operations_by_type=["replace"]
+    ) == [operations[1]]
+    assert filter_operations(
+        operations, old={"settings": {"debug": "enabled"}}, values=["enabled"]
+    ) == [operations[3]]
+    assert filter_operations(operations, paths=["/users/**"], invert=True) == [
+        operations[3]
+    ]
 
 
 def test_replace_operation():

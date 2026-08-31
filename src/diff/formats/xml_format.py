@@ -53,13 +53,14 @@ class XmlFormat:
     extensions = (".xml",)
 
     def load(self, text: str) -> Any:
-        root = ET.fromstring(text)
+        # CLI-supplied local files only, same trust level as JSON/YAML/TOML inputs.
+        root = ET.fromstring(text)  # noqa: S314
         return {root.tag: _elem_to_obj(root)}
 
     def dump(self, value: Any) -> str:
         if not isinstance(value, dict) or len(value) != 1:
             raise ValueError("XML documents must have exactly one root element")
-        (tag, obj), = value.items()
+        ((tag, obj),) = value.items()
         elem = _obj_to_elem(tag, obj)
         ET.indent(elem)
         return ET.tostring(elem, encoding="unicode") + "\n"
