@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## [0.11.0] - 2026-08-31
+
+### Miscellaneous
+
+- Rename diff to drift
+
 ## [0.10.0] - 2026-08-31
 
 ### Features
