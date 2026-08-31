@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## [0.10.0] - 2026-08-31
+
+### Features
+
+- Add search feature
+
 ## [0.9.0] - 2026-08-30
 
 ### Features
