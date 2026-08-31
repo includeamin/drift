@@ -1,4 +1,4 @@
-# diff
+# drift
 
 Calculate RFC 6902 JSON Patch operations between JSON-compatible Python values.
 Paths use RFC 6901 JSON Pointer syntax.
