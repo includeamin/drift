@@ -37,6 +37,14 @@ def test_filter_operations_combines_criteria():
     ]
 
 
+@pytest.mark.parametrize(
+    ("argument", "flag"), [("fields", "--field"), ("values", "--grep")]
+)
+def test_filter_operations_reports_invalid_regular_expressions(argument, flag):
+    with pytest.raises(ValueError, match=rf"invalid {flag} regular expression"):
+        filter_operations([], **{argument: ["*"]})
+
+
 def test_replace_operation():
     assert diff({"name": "Alex"}, {"name": "David"}) == [
         Delta(op="replace", path="/name", value="Alex")

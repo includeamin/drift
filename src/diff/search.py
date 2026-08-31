@@ -38,6 +38,13 @@ def _value_matches(patterns: Sequence[re.Pattern[str]], values: Sequence[Any]) -
     )
 
 
+def _compile_patterns(patterns: Sequence[str], flag: str) -> list[re.Pattern[str]]:
+    try:
+        return [re.compile(pattern) for pattern in patterns]
+    except re.error as error:
+        raise ValueError(f"invalid {flag} regular expression: {error}") from None
+
+
 def _resolve(document: Any, path: str) -> Any:
     value = document
     for segment in split_pointer(path):
@@ -66,18 +73,20 @@ def filter_operations(
     invert: bool = False,
 ) -> list[Delta]:
     """Filter operations; repeated criteria OR together, different criteria AND."""
-    field_patterns = [re.compile(pattern) for pattern in fields]
-    value_patterns = [re.compile(pattern) for pattern in values]
+    field_patterns = _compile_patterns(fields, "--field")
+    value_patterns = _compile_patterns(values, "--grep")
     operation_types = set(operations_by_type)
 
     def matches(operation: Delta) -> bool:
-        if paths and not any(path_matches(pattern, operation.path) for pattern in paths):
+        if paths and not any(
+            path_matches(pattern, operation.path) for pattern in paths
+        ):
             return False
         if fields:
             field = split_pointer(operation.path)[-1] if operation.path else ""
             if not any(pattern.search(field) for pattern in field_patterns):
                 return False
-        operation_values = (operation.value,)
+        operation_values: Sequence[Any] = (operation.value,)
         if operation.op in {"remove", "replace"}:
             operation_values = (_resolve(old, operation.path), operation.value)
         if values and not _value_matches(value_patterns, operation_values):
